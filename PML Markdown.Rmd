@@ -1,0 +1,99 @@
+---
+title: "Practical Machine Learning - Write Up"
+author: "Nicholas Wright"
+date: "29 September 2017"
+output: html_document
+---
+
+## Summary
+Random forest analysis was carried out on the training set to predict the 'classe' variable in the test set.
+
+```{r, echo = TRUE}
+
+
+#The following code brings in the relevant packages and reduces the 'training' dataset by removing non-numeric data and variables which are unlikely to be relevant.
+
+setwd("~/R/R - Practical Machine Learning")
+library(caret)
+library(randomForest)
+originaltraining = read.csv("pml-training.csv", na.strings=c("", "NA", "NULL"))
+originaltesting = read.csv("pml-testing.csv", na.strings=c("", "NA", "NULL"))
+dim(originaltraining)
+dim(originaltesting)
+training2 <- originaltraining[ , colSums(is.na(originaltraining)) == 0]
+dim(training2)
+head(training2)
+filtered <- c('X', 'user_name', 'raw_timestamp_part_1', 'raw_timestamp_part_2', 'cvtd_timestamp', 'new_window', 'num_window')
+training3 <- training2[, -which(names(training2) %in% filtered)]
+dim(training3)
+
+```
+
+## R Markdown
+
+Inspection of the training set shows a number of variables that have very low variance (so are unlikely to be effective predictors for 'classe') and a number of correlated variables (that are unlikely to increase the predictive power of any model). These are removed.The training set is split 80:20 into two sets - one for building the model (80% of the data) and the other for validating the model.
+
+```{r, echo = TRUE}
+
+#Variables with low variance and highly correlated variables are removed.
+#The original training set of data is split 80:20 into a training set and a new testing set.
+LowVariance= nearZeroVar(training3[sapply(training3, is.numeric)], saveMetrics = TRUE)
+training4 = training3[,LowVariance[, 'nzv']==0]
+dim(training4)
+corrMatrix <- cor(na.omit(training4[sapply(training4, is.numeric)]))
+dim(corrMatrix)
+removecor = findCorrelation(corrMatrix, cutoff = .90, verbose = TRUE)
+training5 = training4[,-removecor]
+dim(training5)
+inTrain <- createDataPartition(y=training5$classe, p=0.8, list=FALSE)
+trainingset <- training5[inTrain,]; validationset <- training5[-inTrain,]
+dim(trainingset);dim(validationset)
+
+```
+
+## Caret
+Using the 'Caret' package, a 'decision tree' model was constructed.
+
+
+```{r, echo=TRUE}
+set.seed(22222)
+model1 <- train(classe ~ .,method="rpart",data=trainingset)
+print(model1$finalModel)
+plot(model1$finalModel)
+text(model1$finalModel,pretty=0, cex =.8)
+#This builds a decision tree model, which we can use on the validation data.
+
+prediction1=predict(model1,validationset)
+prediction2 = with(validationset,table(prediction1,classe))
+sum(diag(prediction2))/sum(as.vector(prediction2))
+#The last line calculates the error rate.
+
+```
+As we can see, this is a relatively large error rate.
+
+## RandomForest
+Using the 'RandomForest' package, a 'random forest' model was constructed.
+
+```{r, echo=TRUE}
+set.seed(22222)
+randomforest1=randomForest(classe~.,data=trainingset,ntree=500, importance=TRUE)
+randomforest1
+varImpPlot(randomforest1,)
+rfpredict=predict(randomforest1,validationset,type="class")
+preddata = with(validationset,table(rfpredict,classe))
+sum(diag(preddata))/sum(as.vector(preddata))
+#This builds a decision tree model, which we can use on the validation data.
+
+
+```
+As the error rate is much lower, we can use the random forest model on the original testing dataset.
+
+```{r, echo=TRUE}
+
+newprediction <- predict(randomforest1, originaltesting)
+newprediction
+
+
+```
+
+This provides us with the predicted classes for each case (and the answers to the quiz!)
